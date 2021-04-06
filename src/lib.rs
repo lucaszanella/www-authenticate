@@ -1,11 +1,13 @@
 //! www-authenticate
 //! missing HTTP WWW-Authenticate header parser/printer for hyper
-
+#[cfg(feature = "hyperx")]
 extern crate hyperx;
 extern crate unicase;
 extern crate url;
 
+#[cfg(feature = "hyperx")]
 use hyperx::Result;
+#[cfg(feature = "hyperx")]
 use hyperx::header::{Formatter, Header, Raw};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -166,6 +168,7 @@ impl fmt::Display for WwwAuthenticate {
     }
 }
 
+#[cfg(feature = "hyperx")]
 impl Header for WwwAuthenticate {
     fn header_name() -> &'static str {
         "WWW-Authenticate"
@@ -737,7 +740,20 @@ mod digest {
 
 mod parser {
     use super::raw::{ChallengeFields, RawChallenge};
+    #[cfg(feature = "hyperx")]
     use hyperx::{Error, Result};
+    #[cfg(not(feature = "hyperx"))]
+    type Result<T> = std::result::Result<T, Error>;
+    #[cfg(not(feature = "hyperx"))]
+    pub enum Error {
+        Method,
+        Version,
+        Header,
+        TooLarge,
+        Status,
+        Utf8(core::str::Utf8Error),
+        // some variants omitted
+    }
     use std::cell::Cell;
     use std::str::from_utf8_unchecked;
 

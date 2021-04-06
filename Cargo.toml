@@ -10,7 +10,10 @@ repository = "https://github.com/KeenS/www-authenticate"
 keywords = ["http", "hyper", "hyperium", "authentication"]
 categories = ["web-programming::http-client", "web-programming::http-server"]
 
+[features]
+default = ["hyperx"]
+
 [dependencies]
-hyperx = "0.13.0"
+hyperx = { version="0.13.0", optional = true }
 unicase = "1.0"
 url = "1.5"
