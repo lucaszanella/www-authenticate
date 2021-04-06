@@ -16,6 +16,20 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 use unicase::UniCase;
 
+#[cfg(not(feature = "hyperx"))]
+type Result<T> = std::result::Result<T, Error>;
+#[cfg(not(feature = "hyperx"))]
+#[derive(Debug)]
+pub enum Error {
+    Method,
+    Version,
+    Header,
+    TooLarge,
+    Status,
+    Utf8(core::str::Utf8Error),
+    // some variants omitted
+}
+
 /// `WWW-Authenticate` header, defined in
 /// [RFC7235](https://tools.ietf.org/html/rfc7235#section-4.1)
 ///
@@ -99,6 +113,30 @@ impl WwwAuthenticate {
         let mut auth = WwwAuthenticate(HashMap::new());
         auth.set_raw(scheme, raw);
         auth
+    }
+
+    pub fn from_header(lines: Vec<Vec<u8>>) -> Result<Self> {
+        let mut map = HashMap::new();
+        for line in lines {
+            let stream = parser::Stream::new(line.as_ref());
+            loop {
+                let (scheme, challenge) = match stream.challenge() {
+                    Ok(v) => v,
+                    Err(e) => {
+                        if stream.is_end() {
+                            break;
+                        } else {
+                            return Err(e);
+                        }
+                    }
+                };
+                // TODO: treat the cases when a scheme is duplicated
+                map.entry(UniCase(CowStr(Cow::Owned(scheme))))
+                    .or_insert(Vec::new())
+                    .push(challenge);
+            }
+        }
+        Ok(WwwAuthenticate(map))
     }
 
     /// find challenges and convert them into `C` if found.
@@ -742,18 +780,7 @@ mod parser {
     use super::raw::{ChallengeFields, RawChallenge};
     #[cfg(feature = "hyperx")]
     use hyperx::{Error, Result};
-    #[cfg(not(feature = "hyperx"))]
-    type Result<T> = std::result::Result<T, Error>;
-    #[cfg(not(feature = "hyperx"))]
-    pub enum Error {
-        Method,
-        Version,
-        Header,
-        TooLarge,
-        Status,
-        Utf8(core::str::Utf8Error),
-        // some variants omitted
-    }
+    use crate::{Error, Result};
     use std::cell::Cell;
     use std::str::from_utf8_unchecked;
 
@@ -819,6 +846,7 @@ mod parser {
                 Err(Error::Header)
             }
         }
+
         pub fn skip_a_next(&self, c: u8) -> Result<()> {
             self.skip_ws()?;
             if self.is_end() {
