@@ -9,7 +9,7 @@ extern crate url;
 use hyperx::Result;
 #[cfg(feature = "hyperx")]
 use hyperx::header::{Formatter, Header, Raw};
-use std::borrow::Cow;
+use std::borrow::{Cow, Borrow};
 use std::collections::HashMap;
 use std::fmt;
 use std::mem;
@@ -91,7 +91,7 @@ pub enum Error {
 /// # }
 /// ```
 #[derive(Debug, Clone)]
-pub struct WwwAuthenticate(HashMap<UniCase<CowStr>, Vec<RawChallenge>>);
+pub struct WwwAuthenticate(HashMap<Wrapper<'static>, Vec<RawChallenge>>);
 
 /// The challenge described in
 /// [RFC7235](https://tools.ietf.org/html/rfc7235#section-4.1).
@@ -131,7 +131,7 @@ impl WwwAuthenticate {
                     }
                 };
                 // TODO: treat the cases when a scheme is duplicated
-                map.entry(UniCase(CowStr(Cow::Owned(scheme))))
+                map.entry(Wrapper(UniCase(Cow::Owned(scheme))))
                     .or_insert(Vec::new())
                     .push(challenge);
             }
@@ -142,16 +142,14 @@ impl WwwAuthenticate {
     /// find challenges and convert them into `C` if found.
     pub fn get<C: Challenge>(&self) -> Option<Vec<C>> {
         self.0
-            .get(&UniCase(CowStr(Cow::Borrowed(C::challenge_name()))))
+            .get(&Wrapper(UniCase(Cow::Borrowed(C::challenge_name()))))
             .map(|m| m.iter().map(Clone::clone).flat_map(C::from_raw).collect())
     }
 
     /// find challenges and return it if found
     pub fn get_raw(&self, name: &str) -> Option<&[RawChallenge]> {
         self.0
-            .get(&UniCase(CowStr(Cow::Borrowed(unsafe {
-                mem::transmute::<&str, &'static str>(name)
-            }))))
+            .get(&UniCase(Cow::Borrowed(name)))
             .map(AsRef::as_ref)
     }
 
@@ -159,7 +157,7 @@ impl WwwAuthenticate {
     pub fn set<C: Challenge>(&mut self, c: C) -> bool {
         self.0
             .insert(
-                UniCase(CowStr(Cow::Borrowed(C::challenge_name()))),
+                Wrapper(UniCase(Cow::Borrowed(C::challenge_name()))),
                 vec![c.into_raw()],
             )
             .is_some()
@@ -168,14 +166,14 @@ impl WwwAuthenticate {
     /// set a challenge. This replaces existing challenges of the same name.
     pub fn set_raw(&mut self, scheme: String, raw: RawChallenge) -> bool {
         self.0
-            .insert(UniCase(CowStr(Cow::Owned(scheme))), vec![raw])
+            .insert(Wrapper(UniCase(Cow::Owned(scheme))), vec![raw])
             .is_some()
     }
 
     /// append a challenge. This appends existing challenges of the same name.
     pub fn append<C: Challenge>(&mut self, c: C) {
         self.0
-            .entry(UniCase(CowStr(Cow::Borrowed(C::challenge_name()))))
+            .entry(Wrapper(UniCase(Cow::Borrowed(C::challenge_name()))))
             .or_insert(Vec::new())
             .push(c.into_raw())
     }
@@ -183,7 +181,7 @@ impl WwwAuthenticate {
     /// append a challenge. This appends existing challenges of the same name.
     pub fn append_raw(&mut self, scheme: String, raw: RawChallenge) {
         self.0
-            .entry(UniCase(CowStr(Cow::Owned(scheme))))
+            .entry(Wrapper(UniCase(Cow::Owned(scheme))))
             .or_insert(Vec::new())
             .push(raw)
     }
@@ -228,7 +226,7 @@ impl Header for WwwAuthenticate {
                     }
                 };
                 // TODO: treat the cases when a scheme is duplicated
-                map.entry(UniCase(CowStr(Cow::Owned(scheme))))
+                map.entry(Wrapper(UniCase(Cow::Owned(scheme))))
                     .or_insert(Vec::new())
                     .push(challenge);
             }
@@ -281,9 +279,25 @@ macro_rules! try_opt {
     };
 }
 
-#[derive(Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]
-struct CowStr(Cow<'static, str>);
+//#[derive(Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]
+//struct CowStr(Cow<'static, str>);
 
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
+struct Wrapper<'a>(UniCase<Cow<'a, str>>);
+
+impl<'a, 'b: 'a> Borrow<UniCase<Cow<'a, str>>> for Wrapper<'b> {
+    fn borrow(&self) -> &UniCase<Cow<'a, str>> {
+        &self.0
+    }
+}
+
+impl<'a> fmt::Display for Wrapper<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/*
 impl Deref for CowStr {
     type Target = Cow<'static, str>;
 
@@ -315,6 +329,7 @@ impl AsRef<str> for CowStr {
         self
     }
 }
+*/
 
 pub use self::raw::*;
 mod raw {
@@ -331,7 +346,7 @@ mod raw {
 
     /// A representation of the challenge fields
     #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct ChallengeFields(HashMap<UniCase<CowStr>, (String, Quote)>);
+    pub struct ChallengeFields(HashMap<Wrapper<'static>, (String, Quote)>);
 
     impl ChallengeFields {
         pub fn new() -> Self {
@@ -354,48 +369,40 @@ mod raw {
         }
         pub fn get(&self, k: &str) -> Option<&String> {
             self.0
-                .get(&UniCase(CowStr(Cow::Borrowed(unsafe {
-                    mem::transmute::<&str, &'static str>(k)
-                }))))
+                .get(&UniCase(Cow::Borrowed(k)))
                 .map(|&(ref s, _)| s)
         }
         pub fn contains_key(&self, k: &str) -> bool {
-            self.0.contains_key(&UniCase(CowStr(Cow::Borrowed(unsafe {
-                mem::transmute::<&str, &'static str>(k)
-            }))))
+            self.0.contains_key(&UniCase(Cow::Borrowed(k)))
         }
         pub fn get_mut(&mut self, k: &str) -> Option<&mut String> {
             self.0
-                .get_mut(&UniCase(CowStr(Cow::Borrowed(unsafe {
-                    mem::transmute::<&str, &'static str>(k)
-                }))))
+                .get_mut(&UniCase(Cow::Borrowed(k)))
                 .map(|&mut (ref mut s, _)| s)
         }
         pub fn insert(&mut self, k: String, v: String) -> Option<String> {
             self.0
-                .insert(UniCase(CowStr(Cow::Owned(k))), (v, Quote::IfNeed))
+                .insert(Wrapper(UniCase(Cow::Owned(k))), (v, Quote::IfNeed))
                 .map(|(s, _)| s)
         }
         pub fn insert_quoting(&mut self, k: String, v: String) -> Option<String> {
             self.0
-                .insert(UniCase(CowStr(Cow::Owned(k))), (v, Quote::Always))
+                .insert(Wrapper(UniCase(Cow::Owned(k))), (v, Quote::Always))
                 .map(|(s, _)| s)
         }
         pub fn insert_static(&mut self, k: &'static str, v: String) -> Option<String> {
             self.0
-                .insert(UniCase(CowStr(Cow::Borrowed(k))), (v, Quote::IfNeed))
+                .insert(Wrapper(UniCase(Cow::Borrowed(k))), (v, Quote::IfNeed))
                 .map(|(s, _)| s)
         }
         pub fn insert_static_quoting(&mut self, k: &'static str, v: String) -> Option<String> {
             self.0
-                .insert(UniCase(CowStr(Cow::Borrowed(k))), (v, Quote::Always))
+                .insert(Wrapper(UniCase(Cow::Borrowed(k))), (v, Quote::Always))
                 .map(|(s, _)| s)
         }
         pub fn remove(&mut self, k: &str) -> Option<String> {
             self.0
-                .remove(&UniCase(CowStr(Cow::Borrowed(unsafe {
-                    mem::transmute::<&str, &'static str>(k)
-                }))))
+                .remove(&UniCase(Cow::Borrowed(k)))
                 .map(|(s, _)| s)
         }
     }
@@ -507,6 +514,8 @@ mod basic {
     }
 }
 
+
+
 pub use self::digest::*;
 mod digest {
     use super::*;
@@ -532,6 +541,30 @@ mod digest {
         pub algorithm: Option<Algorithm>,
         /// "quality of protection" values supported by the server
         pub qop: Option<Vec<Qop>>,
+        // pub charset: Option<Charset>,
+        /// this is an OPTIONAL parameter that is used by the server to
+        /// indicate that it supports username hashing.
+        /// default is false if not present
+        pub userhash: Option<bool>,
+    }
+
+    pub struct DigestChallengeResponse {
+        /// realm of the authentication
+        pub realm: Option<String>,
+        /// domains of the authentication
+        pub uri: Option<Url>,
+        /// the nonce used in authentiaction
+        pub nonce: Option<String>,
+        /// a string data specified by the server
+        pub opaque: Option<String>,
+        /// a flag indicating that the previous request from
+        /// the client was rejected because the nonce value was stale.
+        pub stale: Option<bool>,
+        /// the algorithm used to produce the digest and unkeyed digest.
+        /// if not present, it is assumed to be Md5
+        pub algorithm: Option<Algorithm>,
+        /// "quality of protection" values supported by the server
+        pub qop: Option<Qop>,
         // pub charset: Option<Charset>,
         /// this is an OPTIONAL parameter that is used by the server to
         /// indicate that it supports username hashing.
@@ -659,6 +692,7 @@ mod digest {
                 }
             }
         }
+        
         fn into_raw(self) -> RawChallenge {
             let mut map = ChallengeFields::new();
             // Notes on quoting/non-quoting from the spec
@@ -780,6 +814,7 @@ mod parser {
     use super::raw::{ChallengeFields, RawChallenge};
     #[cfg(feature = "hyperx")]
     use hyperx::{Error, Result};
+    #[cfg(not(feature = "hyperx"))]
     use crate::{Error, Result};
     use std::cell::Cell;
     use std::str::from_utf8_unchecked;
