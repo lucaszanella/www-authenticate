@@ -13,6 +13,7 @@ use std::borrow::{Cow, Borrow};
 use std::collections::HashMap;
 use std::fmt;
 use unicase::UniCase;
+use std::io::Write;
 
 #[cfg(not(feature = "hyperx"))]
 type Result<T> = std::result::Result<T, Error>;
@@ -511,10 +512,13 @@ mod digest {
     }
 
     pub struct DigestChallengeResponse {
+        pub username: String,
         /// realm of the authentication
         pub realm: Option<String>,
         /// domains of the authentication
         pub uri: Option<Url>,
+        pub nonce_count: i32,
+        pub cnonce: String, 
         /// the nonce used in authentiaction
         pub nonce: Option<String>,
         /// a string data specified by the server
@@ -532,6 +536,38 @@ mod digest {
         /// indicate that it supports username hashing.
         /// default is false if not present
         pub userhash: Option<bool>,
+    }
+
+    impl DigestChallengeResponse {
+
+        fn serialize_if_option<W: Write, T: std::fmt::Display>(t: &Option<T>, writer: &mut W) -> std::result::Result<(), std::io::Error> {
+            if let Some(t) = t {
+                writer.write(format!(",{}", t).as_bytes())?;
+            };
+            Ok(())
+        }
+
+        fn serialize_if<W: Write, T: std::fmt::Display>(t: &T, writer: &mut W) -> std::result::Result<(), std::io::Error> {
+            writer.write(format!(",{}", t).as_bytes())?;
+            Ok(())
+        }
+
+        pub fn serialize<W: Write>(&self, writer: &mut W) -> std::result::Result<(), std::io::Error> {
+            writer.write(b"Digest ")?;
+            writer.write(b"username=")?;
+            writer.write(self.username.as_bytes())?;
+            DigestChallengeResponse::serialize_if_option(&self.realm, writer)?;
+            DigestChallengeResponse::serialize_if_option(&self.uri, writer)?;
+            DigestChallengeResponse::serialize_if_option(&self.nonce, writer)?;
+            DigestChallengeResponse::serialize_if(&self.cnonce, writer)?;
+            DigestChallengeResponse::serialize_if(&self.nonce_count, writer)?;
+            DigestChallengeResponse::serialize_if_option(&self.opaque, writer)?;
+            DigestChallengeResponse::serialize_if_option(&self.stale, writer)?;
+            DigestChallengeResponse::serialize_if_option(&self.algorithm, writer)?;
+            DigestChallengeResponse::serialize_if_option(&self.qop, writer)?;
+            DigestChallengeResponse::serialize_if_option(&self.userhash, writer)?;
+            Ok(())
+        }
     }
 
     /// Algorithms used to produce the digest and unkeyed digest.
