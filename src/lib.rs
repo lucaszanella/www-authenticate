@@ -12,8 +12,6 @@ use hyperx::header::{Formatter, Header, Raw};
 use std::borrow::{Cow, Borrow};
 use std::collections::HashMap;
 use std::fmt;
-use std::mem;
-use std::ops::{Deref, DerefMut};
 use unicase::UniCase;
 
 #[cfg(not(feature = "hyperx"))]
@@ -297,46 +295,10 @@ impl<'a> fmt::Display for Wrapper<'a> {
     }
 }
 
-/*
-impl Deref for CowStr {
-    type Target = Cow<'static, str>;
-
-    fn deref(&self) -> &Cow<'static, str> {
-        &self.0
-    }
-}
-
-impl fmt::Debug for CowStr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
-    }
-}
-
-impl fmt::Display for CowStr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(&self.0, f)
-    }
-}
-
-impl DerefMut for CowStr {
-    fn deref_mut(&mut self) -> &mut Cow<'static, str> {
-        &mut self.0
-    }
-}
-
-impl AsRef<str> for CowStr {
-    fn as_ref(&self) -> &str {
-        self
-    }
-}
-*/
-
 pub use self::raw::*;
 mod raw {
     use super::*;
     use std::borrow::Cow;
-    use std::mem;
-    use unicase::UniCase;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Quote {
