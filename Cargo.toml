@@ -17,3 +17,4 @@ default = ["hyperx"]
 hyperx = { version="0.13.0", optional = true }
 unicase = "1.0"
 url = "1.5"
+base64 = "0.13.0"

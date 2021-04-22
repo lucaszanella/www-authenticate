@@ -418,6 +418,20 @@ mod basic {
         // pub charset: Option<Charset>
     }
 
+    #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+    pub struct BasicChallengeResponse {
+        pub username: String,
+        pub password: String
+    }
+
+    impl BasicChallengeResponse {
+        pub fn serialize<W: Write>(&self, writer: &mut W) -> std::result::Result<(), std::io::Error> {
+            let authentication = base64::encode(format!("{}:{}", self.username, self.password));
+            writer.write(format!("Basic {}", authentication).as_bytes())?;
+            Ok(())
+        }
+    }
+
     impl Challenge for BasicChallenge {
         fn challenge_name() -> &'static str {
             "Basic"
@@ -462,6 +476,19 @@ mod basic {
         assert_eq!(basics.len(), 1);
         let basic = basics.swap_remove(0);
         assert_eq!(basic.realm, "secret zone")
+    }
+
+    #[test]
+    fn test_serialize_basic_authentication() {
+        let basic_challenge = BasicChallengeResponse {
+            username: "Aladdin".to_string(),
+            password: "open sesame".to_string()
+        };
+        let mut buffer = Vec::<u8>::new();
+        basic_challenge.serialize(&mut buffer).unwrap();
+        let response = String::from_utf8_lossy(buffer.as_slice());
+        println!("{}", response);
+        assert_eq!("Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==", response);
     }
 
     #[test]
@@ -511,16 +538,17 @@ mod digest {
         pub userhash: Option<bool>,
     }
 
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct DigestChallengeResponse {
         pub username: String,
         /// realm of the authentication
         pub realm: Option<String>,
         /// domains of the authentication
-        pub uri: Option<Url>,
-        pub nonce_count: i32,
-        pub cnonce: String, 
+        pub uri: String,
+        pub nounce_count: i32,
+        pub cnounce: String, 
         /// the nonce used in authentiaction
-        pub nonce: Option<String>,
+        pub nounce: String,
         /// a string data specified by the server
         pub opaque: Option<String>,
         /// a flag indicating that the previous request from
@@ -539,33 +567,49 @@ mod digest {
     }
 
     impl DigestChallengeResponse {
-
-        fn serialize_if_option<W: Write, T: std::fmt::Display>(t: &Option<T>, writer: &mut W) -> std::result::Result<(), std::io::Error> {
+        fn serialize_if_option<W: Write, T: std::fmt::Display>(attribute: &str, t: &Option<T>, should_quote: bool, writer: &mut W) -> std::result::Result<(), std::io::Error> {
             if let Some(t) = t {
-                writer.write(format!(",{}", t).as_bytes())?;
+                if should_quote {
+                    writer.write(format!(", {}=\"{}\"", attribute, t).as_bytes())?;
+                } else {
+                    writer.write(format!(", {}={}", attribute, t).as_bytes())?;
+                }
             };
             Ok(())
         }
 
-        fn serialize_if<W: Write, T: std::fmt::Display>(t: &T, writer: &mut W) -> std::result::Result<(), std::io::Error> {
-            writer.write(format!(",{}", t).as_bytes())?;
+        fn serialize_if<W: Write, T: std::fmt::Display>(attribute: &str,t: &T, should_quote: bool, writer: &mut W) -> std::result::Result<(), std::io::Error> {
+            if should_quote {
+                writer.write(format!(", {}=\"{}\"", attribute, t).as_bytes())?;
+            } else {
+                writer.write(format!(", {}={}", attribute, t).as_bytes())?;
+            }
             Ok(())
+        }
+
+        pub fn nonce_count_hex(nounce_count: i32) -> String {
+            let mut nounce_count_hex = format!("{:x}", nounce_count);
+            for _ in 0..(8-nounce_count_hex.len()) {
+                nounce_count_hex = format!("0{}", nounce_count_hex);
+            }
+            nounce_count_hex
         }
 
         pub fn serialize<W: Write>(&self, writer: &mut W) -> std::result::Result<(), std::io::Error> {
             writer.write(b"Digest ")?;
-            writer.write(b"username=")?;
+            writer.write(b"username=\"")?;
             writer.write(self.username.as_bytes())?;
-            DigestChallengeResponse::serialize_if_option(&self.realm, writer)?;
-            DigestChallengeResponse::serialize_if_option(&self.uri, writer)?;
-            DigestChallengeResponse::serialize_if_option(&self.nonce, writer)?;
-            DigestChallengeResponse::serialize_if(&self.cnonce, writer)?;
-            DigestChallengeResponse::serialize_if(&self.nonce_count, writer)?;
-            DigestChallengeResponse::serialize_if_option(&self.opaque, writer)?;
-            DigestChallengeResponse::serialize_if_option(&self.stale, writer)?;
-            DigestChallengeResponse::serialize_if_option(&self.algorithm, writer)?;
-            DigestChallengeResponse::serialize_if_option(&self.qop, writer)?;
-            DigestChallengeResponse::serialize_if_option(&self.userhash, writer)?;
+            writer.write(b"\"")?;
+            DigestChallengeResponse::serialize_if_option("realm", &self.realm, true, writer)?;
+            DigestChallengeResponse::serialize_if("uri", &self.uri, true, writer)?;
+            DigestChallengeResponse::serialize_if("nonce", &self.nounce, true, writer)?;
+            DigestChallengeResponse::serialize_if("cnonce", &self.cnounce, true, writer)?;
+            DigestChallengeResponse::serialize_if("nc", &DigestChallengeResponse::nonce_count_hex(self.nounce_count), false, writer)?;
+            DigestChallengeResponse::serialize_if_option("opaque", &self.opaque, true, writer)?;
+            DigestChallengeResponse::serialize_if_option("stale", &self.stale, false, writer)?;
+            DigestChallengeResponse::serialize_if_option("algorithm", &self.algorithm, false, writer)?;
+            DigestChallengeResponse::serialize_if_option("qop", &self.qop, false, writer)?;
+            DigestChallengeResponse::serialize_if_option("userhash", &self.userhash, false, writer)?;
             Ok(())
         }
     }
