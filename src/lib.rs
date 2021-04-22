@@ -564,6 +564,7 @@ mod digest {
         /// indicate that it supports username hashing.
         /// default is false if not present
         pub userhash: Option<bool>,
+        pub response: Option<String>
     }
 
     impl DigestChallengeResponse {
@@ -600,6 +601,7 @@ mod digest {
             writer.write(b"username=\"")?;
             writer.write(self.username.as_bytes())?;
             writer.write(b"\"")?;
+            DigestChallengeResponse::serialize_if_option("response", &self.response, true, writer)?;
             DigestChallengeResponse::serialize_if_option("realm", &self.realm, true, writer)?;
             DigestChallengeResponse::serialize_if("uri", &self.uri, true, writer)?;
             DigestChallengeResponse::serialize_if("nonce", &self.nounce, true, writer)?;
