@@ -114,7 +114,7 @@ impl WwwAuthenticate {
         auth
     }
 
-    pub fn from_header(lines: Vec<Vec<u8>>) -> Result<Self> {
+    pub fn from_header(lines: Vec<Vec<u8>>) -> std::result::Result<Self, Error> {
         let mut map = HashMap::new();
         for line in lines {
             let stream = parser::Stream::new(line.as_ref());
@@ -135,14 +135,24 @@ impl WwwAuthenticate {
                     .push(challenge);
             }
         }
-        Ok(WwwAuthenticate(map))
+        if !map.is_empty() {
+            println!("&&&&&&&&&&&& adding map: {:?}", map);
+            Ok(WwwAuthenticate(map))
+        } else {
+            Err(Error::Header)
+        }
     }
 
     /// find challenges and convert them into `C` if found.
     pub fn get<C: Challenge>(&self) -> Option<Vec<C>> {
         self.0
             .get(&Wrapper(UniCase(Cow::Borrowed(C::challenge_name()))))
-            .map(|m| m.iter().map(Clone::clone).flat_map(C::from_raw).collect())
+            .map(|m| m.iter().map(Clone::clone).map(|x|{
+                println!("DUMP: {}", x);
+                let from_raw = DigestChallenge::from_raw(x.clone());
+                println!("no raw: {:?}", from_raw);
+                x
+            }).flat_map(C::from_raw).collect())
     }
 
     /// find challenges and return it if found
@@ -667,6 +677,8 @@ mod digest {
                     let userhash = map.remove("userhash");
 
                     if !map.is_empty() {
+                        #[cfg(test)]
+                        println!("Map was not empty. Remaining: {:?}", map);
                         return None;
                     }
 
@@ -1185,6 +1197,19 @@ mod parser {
         match stream.raw_token68().unwrap() {
             RawChallenge::Token68(token) => assert_eq!(token, "auea1./+="),
             RawChallenge::Fields(_) => panic!(),
+        }
+        assert!(stream.is_end());
+    }
+
+    #[test]
+    fn test_complete_digest() {
+        let b = b"Digest username=\"Mufasa\", realm=\"http-auth@example.org\", uri=\"/dir/index.html\", algorithm=MD5, nonce=\"7ypf/xlj9XXwfDPEoM4URrv/xwf94BcCAzFZH4GiTo0v\", nc=00000001, cnonce=\"f2/wE4q74E6zIJEtWaHKaf5wv/H5QzzpXusqGemxURZJ\", qop=auth, response=\"8ca523f5e9506fed4657c9700eebdbec\", opaque=\"FQhe/qaU925kfnzjCev0ciny7QMkPqMAFRtzCUYo5tdS\"";
+        let stream = Stream::new(b);
+        match stream.challenge().unwrap() {
+            (_, RawChallenge::Token68(_)) => panic!("token68"),
+            (scheme, RawChallenge::Fields(fields)) => {
+                println!("fields: {:?}", fields);
+            }
         }
         assert!(stream.is_end());
     }
