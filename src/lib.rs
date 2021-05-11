@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::fmt;
 use unicase::UniCase;
 use std::io::Write;
+#[cfg(feature = "digest")]
 pub mod digest;
 
 type Result<T> = std::result::Result<T, Error>;

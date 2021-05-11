@@ -1,13 +1,10 @@
-//use crate::body::Body;
-//use log::{debug, error, info, log_enabled, Level};
-//extern crate md5;
-//extern crate sha2;
+
 use md5::Digest;
 use sha2::digest::generic_array::ArrayLength;
 use std::ops::Add;
 use crate::{Algorithm, DigestChallengeResponse, Qop};
 
-//TODO: support this?
+//TODO: support username hashing
 #[derive(Clone, Debug, PartialEq)]
 pub enum Username {
     /// Either an ASCII-encoded username, or a userhash (if the header's `userhash` parameter is
