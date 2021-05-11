@@ -1,23 +1,17 @@
 //! www-authenticate
 //! missing HTTP WWW-Authenticate header parser/printer for hyper
-#[cfg(feature = "hyperx")]
-extern crate hyperx;
-extern crate unicase;
-extern crate url;
+//extern crate unicase;
+//extern crate url;
 
-#[cfg(feature = "hyperx")]
-use hyperx::Result;
-#[cfg(feature = "hyperx")]
-use hyperx::header::{Formatter, Header, Raw};
 use std::borrow::{Cow, Borrow};
 use std::collections::HashMap;
 use std::fmt;
 use unicase::UniCase;
 use std::io::Write;
+pub mod digest;
 
-#[cfg(not(feature = "hyperx"))]
 type Result<T> = std::result::Result<T, Error>;
-#[cfg(not(feature = "hyperx"))]
+
 #[derive(Debug)]
 pub enum Error {
     Method,
@@ -53,9 +47,7 @@ pub enum Error {
 /// # Examples
 ///
 /// ```
-/// # extern crate hyperx;
 /// # extern crate www_authenticate;
-/// # use hyperx::header::Headers;
 /// # use www_authenticate::{WwwAuthenticate, DigestChallenge, Qop,
 /// # Algorithm};
 /// # fn main(){
@@ -71,24 +63,9 @@ pub enum Error {
 ///         stale: None,
 ///         userhash: None,
 /// });
-/// let mut headers = Headers::new();
-/// headers.set(auth);
 /// # }
 /// ```
 ///
-/// ```
-/// # extern crate hyperx;
-/// # extern crate www_authenticate;
-/// # use hyperx::header::Headers;
-/// # use www_authenticate::{WwwAuthenticate, BasicChallenge};
-/// # fn main(){
-/// let auth = WwwAuthenticate::new(BasicChallenge{realm: "foo".into()});
-/// let mut headers = Headers::new();
-/// headers.set(auth);
-/// let auth = headers.get::<WwwAuthenticate>().unwrap();
-/// let basics = auth.get::<BasicChallenge>().unwrap();
-/// # }
-/// ```
 #[derive(Debug, Clone)]
 pub struct WwwAuthenticate(HashMap<Wrapper<'static>, Vec<RawChallenge>>);
 
@@ -130,13 +107,12 @@ impl WwwAuthenticate {
                     }
                 };
                 // TODO: treat the cases when a scheme is duplicated
-                map.entry(Wrapper(UniCase(Cow::Owned(scheme))))
+                map.entry(Wrapper(UniCase::new(Cow::Owned(scheme))))
                     .or_insert(Vec::new())
                     .push(challenge);
             }
         }
         if !map.is_empty() {
-            println!("&&&&&&&&&&&& adding map: {:?}", map);
             Ok(WwwAuthenticate(map))
         } else {
             Err(Error::Header)
@@ -146,19 +122,14 @@ impl WwwAuthenticate {
     /// find challenges and convert them into `C` if found.
     pub fn get<C: Challenge>(&self) -> Option<Vec<C>> {
         self.0
-            .get(&Wrapper(UniCase(Cow::Borrowed(C::challenge_name()))))
-            .map(|m| m.iter().map(Clone::clone).map(|x|{
-                println!("DUMP: {}", x);
-                let from_raw = DigestChallenge::from_raw(x.clone());
-                println!("no raw: {:?}", from_raw);
-                x
-            }).flat_map(C::from_raw).collect())
+            .get(&Wrapper(UniCase::new(Cow::Borrowed(C::challenge_name()))))
+            .map(|m| m.iter().map(Clone::clone).flat_map(C::from_raw).collect())
     }
 
     /// find challenges and return it if found
     pub fn get_raw(&self, name: &str) -> Option<&[RawChallenge]> {
         self.0
-            .get(&UniCase(Cow::Borrowed(name)))
+            .get(&UniCase::new(Cow::Borrowed(name)))
             .map(AsRef::as_ref)
     }
 
@@ -166,7 +137,7 @@ impl WwwAuthenticate {
     pub fn set<C: Challenge>(&mut self, c: C) -> bool {
         self.0
             .insert(
-                Wrapper(UniCase(Cow::Borrowed(C::challenge_name()))),
+                Wrapper(UniCase::new(Cow::Borrowed(C::challenge_name()))),
                 vec![c.into_raw()],
             )
             .is_some()
@@ -175,14 +146,14 @@ impl WwwAuthenticate {
     /// set a challenge. This replaces existing challenges of the same name.
     pub fn set_raw(&mut self, scheme: String, raw: RawChallenge) -> bool {
         self.0
-            .insert(Wrapper(UniCase(Cow::Owned(scheme))), vec![raw])
+            .insert(Wrapper(UniCase::new(Cow::Owned(scheme))), vec![raw])
             .is_some()
     }
 
     /// append a challenge. This appends existing challenges of the same name.
     pub fn append<C: Challenge>(&mut self, c: C) {
         self.0
-            .entry(Wrapper(UniCase(Cow::Borrowed(C::challenge_name()))))
+            .entry(Wrapper(UniCase::new(Cow::Borrowed(C::challenge_name()))))
             .or_insert(Vec::new())
             .push(c.into_raw())
     }
@@ -190,7 +161,7 @@ impl WwwAuthenticate {
     /// append a challenge. This appends existing challenges of the same name.
     pub fn append_raw(&mut self, scheme: String, raw: RawChallenge) {
         self.0
-            .entry(Wrapper(UniCase(Cow::Owned(scheme))))
+            .entry(Wrapper(UniCase::new(Cow::Owned(scheme))))
             .or_insert(Vec::new())
             .push(raw)
     }
@@ -213,48 +184,19 @@ impl fmt::Display for WwwAuthenticate {
     }
 }
 
-#[cfg(feature = "hyperx")]
-impl Header for WwwAuthenticate {
-    fn header_name() -> &'static str {
-        "WWW-Authenticate"
-    }
-
-    fn parse_header(raw: &Raw) -> Result<Self> {
-        let mut map = HashMap::new();
-        for data in raw {
-            let stream = parser::Stream::new(data.as_ref());
-            loop {
-                let (scheme, challenge) = match stream.challenge() {
-                    Ok(v) => v,
-                    Err(e) => {
-                        if stream.is_end() {
-                            break;
-                        } else {
-                            return Err(e);
-                        }
-                    }
-                };
-                // TODO: treat the cases when a scheme is duplicated
-                map.entry(Wrapper(UniCase(Cow::Owned(scheme))))
-                    .or_insert(Vec::new())
-                    .push(challenge);
-            }
-        }
-        Ok(WwwAuthenticate(map))
-    }
-
-    fn fmt_header(&self, f: &mut Formatter) -> fmt::Result {
-        f.fmt_line(self)
-    }
+fn lines_from_str(s: &str) -> Vec::<Vec::<u8>> {
+    let mut lines = Vec::<Vec<u8>>::new();
+    lines.push(s.as_bytes().to_vec());
+    lines
 }
 
 #[test]
 fn test_www_authenticate_multiple_headers() {
     let input1 = br#"Digest realm="http-auth@example.org", qop="auth, auth-int", algorithm=SHA-256, nonce="7ypf/xlj9XXwfDPEoM4URrv/xwf94BcCAzFZH4GiTo0v", opaque="FQhe/qaU925kfnzjCev0ciny7QMkPqMAFRtzCUYo5tdS""#.to_vec();
     let input2 = br#"Digest realm="http-auth@example.org", qop="auth, auth-int", algorithm=MD5, nonce="7ypf/xlj9XXwfDPEoM4URrv/xwf94BcCAzFZH4GiTo0v", opaque="FQhe/qaU925kfnzjCev0ciny7QMkPqMAFRtzCUYo5tdS""#.to_vec();
-    let input = vec![input1, input2];
+    let input:Vec::<Vec::<u8>> = vec![input1.as_slice().to_vec(), input2.as_slice().to_vec()];
 
-    let auth = WwwAuthenticate::parse_header(&input.into()).unwrap();
+    let auth = WwwAuthenticate::from_header(input).unwrap();
     let digests = auth.get::<DigestChallenge>().unwrap();
     assert!(digests.contains(&DigestChallenge {
         realm: Some("http-auth@example.org".into()),
@@ -342,40 +284,40 @@ mod raw {
         }
         pub fn get(&self, k: &str) -> Option<&String> {
             self.0
-                .get(&UniCase(Cow::Borrowed(k)))
+                .get(&UniCase::new(Cow::Borrowed(k)))
                 .map(|&(ref s, _)| s)
         }
         pub fn contains_key(&self, k: &str) -> bool {
-            self.0.contains_key(&UniCase(Cow::Borrowed(k)))
+            self.0.contains_key(&UniCase::new(Cow::Borrowed(k)))
         }
         pub fn get_mut(&mut self, k: &str) -> Option<&mut String> {
             self.0
-                .get_mut(&UniCase(Cow::Borrowed(k)))
+                .get_mut(&UniCase::new(Cow::Borrowed(k)))
                 .map(|&mut (ref mut s, _)| s)
         }
         pub fn insert(&mut self, k: String, v: String) -> Option<String> {
             self.0
-                .insert(Wrapper(UniCase(Cow::Owned(k))), (v, Quote::IfNeed))
+                .insert(Wrapper(UniCase::new(Cow::Owned(k))), (v, Quote::IfNeed))
                 .map(|(s, _)| s)
         }
         pub fn insert_quoting(&mut self, k: String, v: String) -> Option<String> {
             self.0
-                .insert(Wrapper(UniCase(Cow::Owned(k))), (v, Quote::Always))
+                .insert(Wrapper(UniCase::new(Cow::Owned(k))), (v, Quote::Always))
                 .map(|(s, _)| s)
         }
         pub fn insert_static(&mut self, k: &'static str, v: String) -> Option<String> {
             self.0
-                .insert(Wrapper(UniCase(Cow::Borrowed(k))), (v, Quote::IfNeed))
+                .insert(Wrapper(UniCase::new(Cow::Borrowed(k))), (v, Quote::IfNeed))
                 .map(|(s, _)| s)
         }
         pub fn insert_static_quoting(&mut self, k: &'static str, v: String) -> Option<String> {
             self.0
-                .insert(Wrapper(UniCase(Cow::Borrowed(k))), (v, Quote::Always))
+                .insert(Wrapper(UniCase::new(Cow::Borrowed(k))), (v, Quote::Always))
                 .map(|(s, _)| s)
         }
         pub fn remove(&mut self, k: &str) -> Option<String> {
             self.0
-                .remove(&UniCase(Cow::Borrowed(k)))
+                .remove(&UniCase::new(Cow::Borrowed(k)))
                 .map(|(s, _)| s)
         }
     }
@@ -456,7 +398,7 @@ mod basic {
                     // See https://tools.ietf.org/html/rfc7617#section-2.1
                     match map.remove("charset") {
                         Some(c) => {
-                            if UniCase(&c) == UniCase("UTF-8") {
+                            if UniCase::new(&c) == UniCase::new("UTF-8") {
                                 ()
                             } else {
                                 return None;
@@ -481,7 +423,7 @@ mod basic {
     #[test]
     fn test_parse_basic() {
         let input = "Basic realm=\"secret zone\"";
-        let auth = WwwAuthenticate::parse_header(&input.into()).unwrap();
+        let auth = WwwAuthenticate::from_header(lines_from_str(input)).unwrap();
         let mut basics = auth.get::<BasicChallenge>().unwrap();
         assert_eq!(basics.len(), 1);
         let basic = basics.swap_remove(0);
@@ -508,7 +450,7 @@ mod basic {
         };
         let auth = WwwAuthenticate::new(basic.clone());
         let data = format!("{}", auth);
-        let auth = WwwAuthenticate::parse_header(&data.into()).unwrap();
+        let auth = WwwAuthenticate::from_header(lines_from_str(&data)).unwrap();
         let basic_tripped = auth.get::<BasicChallenge>().unwrap().swap_remove(0);
         assert_eq!(basic, basic_tripped);
     }
@@ -516,8 +458,8 @@ mod basic {
 
 
 
-pub use self::digest::*;
-mod digest {
+pub use self::digest_serialization::*;
+mod digest_serialization {
     use super::*;
     use std::str::FromStr;
     use url::Url;
@@ -548,6 +490,18 @@ mod digest {
         pub userhash: Option<bool>,
     }
 
+    #[derive(Debug)]
+    pub enum DigestChallengeResponseError {
+        Io(std::io::Error),
+        MissingResponseDigest
+    }
+
+    impl From<std::io::Error> for DigestChallengeResponseError {
+        fn from(err: std::io::Error) -> DigestChallengeResponseError {
+            DigestChallengeResponseError::Io(err)
+        } 
+    }
+
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct DigestChallengeResponse {
         pub username: String,
@@ -556,9 +510,9 @@ mod digest {
         /// domains of the authentication
         pub uri: String,
         /// nounce counte with changes every request
-        pub nounce_count: i32,
+        pub nounce_count: Option<i32>,
         /// cnounce generated by the client to prevent attacks
-        pub cnounce: String, 
+        pub cnounce: Option<String>, 
         /// the nonce used in authentiaction
         pub nounce: String,
         /// a string data specified by the server
@@ -609,22 +563,25 @@ mod digest {
             nounce_count_hex
         }
 
-        pub fn serialize<W: Write>(&self, writer: &mut W) -> std::result::Result<(), std::io::Error> {
+        pub fn serialize<W: Write>(&self, writer: &mut W) -> std::result::Result<(), DigestChallengeResponseError> {
+            if let None = self.response {
+                return Err(DigestChallengeResponseError::MissingResponseDigest)
+            }
             writer.write(b"Digest ")?;
             writer.write(b"username=\"")?;
             writer.write(self.username.as_bytes())?;
             writer.write(b"\"")?;
-            DigestChallengeResponse::serialize_if_option("response", &self.response, true, writer)?;
+            DigestChallengeResponse::serialize_if_option("algorithm", &self.algorithm, true, writer)?;
             DigestChallengeResponse::serialize_if_option("realm", &self.realm, true, writer)?;
-            DigestChallengeResponse::serialize_if("uri", &self.uri, true, writer)?;
             DigestChallengeResponse::serialize_if("nonce", &self.nounce, true, writer)?;
-            DigestChallengeResponse::serialize_if("cnonce", &self.cnounce, true, writer)?;
-            DigestChallengeResponse::serialize_if("nc", &DigestChallengeResponse::nonce_count_hex(self.nounce_count), false, writer)?;
-            DigestChallengeResponse::serialize_if_option("opaque", &self.opaque, true, writer)?;
-            DigestChallengeResponse::serialize_if_option("stale", &self.stale, false, writer)?;
-            DigestChallengeResponse::serialize_if_option("algorithm", &self.algorithm, false, writer)?;
-            DigestChallengeResponse::serialize_if_option("qop", &self.qop, false, writer)?;
-            DigestChallengeResponse::serialize_if_option("userhash", &self.userhash, false, writer)?;
+            DigestChallengeResponse::serialize_if("uri", &self.uri, true, writer)?;
+            DigestChallengeResponse::serialize_if_option("response", &self.response, true, writer)?;
+            //DigestChallengeResponse::serialize_if("cnonce", &self.cnounce, true, writer)?;
+            //DigestChallengeResponse::serialize_if("nc", &DigestChallengeResponse::nonce_count_hex(self.nounce_count), false, writer)?;
+            //DigestChallengeResponse::serialize_if_option("opaque", &self.opaque, true, writer)?;
+            //DigestChallengeResponse::serialize_if_option("stale", &self.stale, false, writer)?;
+            //DigestChallengeResponse::serialize_if_option("qop", &self.qop, false, writer)?;
+            //DigestChallengeResponse::serialize_if_option("userhash", &self.userhash, false, writer)?;
             Ok(())
         }
     }
@@ -723,7 +680,7 @@ mod digest {
                     };
                     match charset {
                         Some(c) => {
-                            if UniCase(&c) == UniCase("UTF-8") {
+                            if UniCase::new(&c) == UniCase::new("UTF-8") {
                                 ()
                             } else {
                                 return None;
@@ -829,7 +786,7 @@ mod digest {
     #[test]
     fn test_parse_digest() {
         let input = r#"Digest realm="http-auth@example.org", qop="auth, auth-int", algorithm=SHA-256, nonce="7ypf/xlj9XXwfDPEoM4URrv/xwf94BcCAzFZH4GiTo0v", opaque="FQhe/qaU925kfnzjCev0ciny7QMkPqMAFRtzCUYo5tdS""#;
-        let auth = WwwAuthenticate::parse_header(&input.into()).unwrap();
+        let auth = WwwAuthenticate::from_header(lines_from_str(input)).unwrap();
         let mut digests = auth.get::<DigestChallenge>().unwrap();
         assert_eq!(digests.len(), 1);
         let digest = digests.swap_remove(0);
@@ -863,7 +820,7 @@ mod digest {
         };
         let auth = WwwAuthenticate::new(digest.clone());
         let data = format!("{}", auth);
-        let auth = WwwAuthenticate::parse_header(&data.into()).unwrap();
+        let auth = WwwAuthenticate::from_header(lines_from_str(data.as_str())).unwrap();
         let digest_tripped = auth.get::<DigestChallenge>().unwrap().swap_remove(0);
         assert_eq!(digest, digest_tripped);
     }
@@ -871,9 +828,6 @@ mod digest {
 
 mod parser {
     use super::raw::{ChallengeFields, RawChallenge};
-    #[cfg(feature = "hyperx")]
-    use hyperx::{Error, Result};
-    #[cfg(not(feature = "hyperx"))]
     use crate::{Error, Result};
     use std::cell::Cell;
     use std::str::from_utf8_unchecked;
@@ -973,7 +927,7 @@ mod parser {
             })
         }
 
-        pub fn try<F, T>(&self, f: F) -> Result<T>
+        pub fn try1<F, T>(&self, f: F) -> Result<T>
         where
             F: FnOnce() -> Result<T>,
         {
@@ -1081,7 +1035,7 @@ mod parser {
         }
 
         pub fn field(&self) -> Result<(String, String)> {
-            self.try(|| self.kv_token().map(|(k, v)| (k.to_string(), v.to_string())))
+            self.try1(|| self.kv_token().map(|(k, v)| (k.to_string(), v.to_string())))
                 .or_else(|_| self.kv_quoted().map(|(k, v)| (k.to_string(), v)))
         }
 
@@ -1096,7 +1050,7 @@ mod parser {
         pub fn raw_fields(&self) -> Result<RawChallenge> {
             let mut map = ChallengeFields::new();
             loop {
-                match self.try(|| self.field()) {
+                match self.try1(|| self.field()) {
                     Err(_) => return Ok(RawChallenge::Fields(map)),
                     Ok((k, v)) => {
                         if self.skip_field_sep().is_ok() {
@@ -1118,7 +1072,7 @@ mod parser {
         pub fn challenge(&self) -> Result<(String, RawChallenge)> {
             let scheme = self.next_token()?;
             self.take_while1(is_ws)?;
-            let challenge = self.try(|| self.raw_token68())
+            let challenge = self.try1(|| self.raw_token68())
                 .or_else(|_| self.raw_fields())?;
             Ok((scheme.to_string(), challenge))
         }

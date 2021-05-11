@@ -3,6 +3,7 @@ authors = ["Sunrin SHIMURA (keen) <3han5chou7@gmail.com>"]
 name = "www-authenticate"
 version = "0.3.0"
 license = "MIT"
+edition = "2018"
 description = "missing HTTP WWW-Authenticate header parser/printer for hyper 0.11.x. 0.1.x for hyper 0.10.y, 0.2.x for hyper 0.11.y and 0.3.x for hyperx"
 readme = "README.md"
 documentation = "http://docs.rs/www-authenticate"
@@ -10,11 +11,13 @@ repository = "https://github.com/KeenS/www-authenticate"
 keywords = ["http", "hyper", "hyperium", "authentication"]
 categories = ["web-programming::http-client", "web-programming::http-server"]
 
-[features]
-default = ["hyperx"]
-
 [dependencies]
-hyperx = { version="0.13.0", optional = true }
-unicase = "1.0"
 url = "1.5"
 base64 = "0.13.0"
+md-5 = { version = "0.9.1" }
+sha-1 = { version = "0.9.4" }
+sha2 = { version = "0.9.3" }
+hex = { version = "0.4" }
+digest = "0.9.0"
+percent-encoding = "2.1.0"
+unicase = "2.0"
